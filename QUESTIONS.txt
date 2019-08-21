@@ -1,0 +1,49 @@
+## 1. What were some of the design decisions you made to improve the efficiency of at least one of the commands you implemented? Was there a particular algorithm or data structure that you decided to use?
+
+I decided to use an external library (either SciPy or scikit-learn) to perform the pairwise distance calculations because these libraries make use of C++ extensions to optimize performance.
+
+A concern I had, though, was how these libraries treat sparse matrices. One of the four input types I'm asked to cover is a COO sparse matrix. While the SciPy library is does not take advantage of sparse matrices, scikit-learn does.
+
+In order to check these assumptions, I put together a small, informal test of the runtime of each method, which you can find [here](https://gist.github.com/sophiaray/a9d200b3d0b2ca6e78bbbba6b6ba22e7). The conclusion is that for sparse matrices, scipy has a runtime that is ~10x the runtime of scikit-learn and linear algebra. That finding along with the flexibility afforded by using scikit-learn (over a dozen built-in distance metrics) made the choice of library quite easy.
+
+
+## 2. Suppose you had to use this tool on a huge csv file that was too big to fit in memory, how would you have to change your implementation, if at all, to handle this?
+
+The answer here depends somewhat on the nature of the dataset. Is it more wide or tall?
+
+The first option for wide arrays (see the following question for the the second option) is to store and operate on the dataset using out-of-core (OOC) techniques. There are several tools for this: e.g. PyTables, h5py, Blaze, Spark. These tools allow a very large matrix to be represented on disk instead of in memory. They also provide different methods for operating on these OOC matrices. I would recommend working with either Blaze or Spark, because these libraries abstract both OOC storage and computation. Doing so would require that the distance calculation be re-implemented---perhaps a quick task if only the Eucledian distance is of interest but a tall order if the many scikit-learn distance metrics are desired. That said, computing distances of a very wide set of data leads to many problems (see [curse of dimensionality](https://en.wikipedia.org/wiki/Curse_of_dimensionality#Distance_functions) as well as question 3).
+
+And if the matrix is tall? I would begin by asking for caution from whomever I am performing this task for. Taking pairwise distances of a tall matrix too large to be stored in memory is potentially asking for a lot of trouble. I'll explain. Assume that the matrix that is large to store in memory is ~32GB. Using float64s, 32GB is room for about (32 GB) / (8 bytes) = 4,000,000,000 cells. This is a tall matrix so I'll assume it's shape is 4,000,000 x 1,000. In this case the pairwise distance output is going to be 4,000,000 x 4,000,000 x 8 bytes = 128 TB. This is an incredibly large matrix, even in the age of big data. This single matrix would require dozens of the largest hard drives currently on the market. Additionally, while there are some ways to reduce the footprint of this matrix (e.g. only storing the upper triangular portion or using a smaller datatype) none provide more than a fractional reduction in size when the problem is orders of magnitude. This is to say nothing of the computational resources needed to generate the array.
+
+That said, it certainly is possible to perform the pairwise distance calculations on very large arrays given the right equipment. If this were the case, and I wanted to stick with a python codebase, I would very strongly recommend Spark. It's designed to scale well with both extremely large matrices and extremely demanding computational tasks while exposing a relatively accessible interface to programmers.
+
+A final note: My recommendation depends greatly on the application. I'm assuming that I am being asked to apply the entire pymatrix tool to the dataset that is too large to fit into memory. However, if I am more interested in the clustering command than the others, there is another solution. Scikit provides an [incremental version of KMeans](http://scikit-learn.org/stable/modules/generated/sklearn.cluster.MiniBatchKMeans.html) clustering which plays very nicely with OOC matrix storage. In this specific case, the full pairwise distance matrix is never computed so the above problems do not occur.
+
+
+## 3. If our dataset was very wide (a lot of columns) and we didn't care about the exact distance between points, we only wanted to find one row in the data set that is close to a given query point or a list of query points, how could you do this efficiently in terms of memory/computation?
+
+A first option is to use one of the many dimensionality reduction techniques. In general, these seek to summarize a large set of dimensions using a much smaller set, while maintaining relationships between points of data. The result here will be that the original [m x n] matrix can be projected onto a k dimensional space producing a [m x k] matrix. In the case of a very wide dataset, selecting k << n can provide many benefits. In this case, `closest`, `farthest`, and `centroids` would perform almost exactly as they currently do. Depending on the nature of the data, I would suggest PCA or, if the matrix is too large to store in memory, incremental PCA.
+
+One potential problem is that these are not optimized for *very* high dimensional data. If this were a priority, I would recommend exploring other dimensionality reduction techniques for such a situation, including NIPALS.
+
+As I mentioned above, high-dimensional spaces are a huge problem for distance measures. For very large numbers of dimensions, points will tend to be far away from the center and far away from each other (see 'curse of dimensionality' above for a mathematical explanation of this). Notably, dimensionality reduction reduces or eliminates this problem in most cases.
+
+## 4. Is there anything you would like to share or point out from your solution? An awesome pythonic code snippet used? A cool feature/option/argument/command you added? A rant about why python is terrible/amazing?
+
+I spent a large fraction of my time on this project figuring out the Click library. I've used other Pocoo libraries but it still took me some time to really get to know this one. Once I did, I was quite happy with a few solutions I figured out.
+
+One challenge I had was implementing the options in a way that was maintainable. The original boilerplate repeated the list of options for each relevant command. This arraignment made modifying those options error-prone---modifying one meant modifying each of them and each time was a chance for error. To solve this I created two decorator groups: one for matrix operations and another for distance operations. While the code to accomplish this is quite terse, the process of figuring out how to apply decorators in this way to a bit of careful thought (as well as trial and error).
+
+A related solution was, in a few cases such as `import_mat`, to use the Click context rather than passing several variables around between functions. This allowed me to streamline the interface between the functions that executed the actual commands and the utility functions.
+
+## 5. Do you have a github account you can share or a code sample of another project you are proud of?
+
+My github page is https://github.com/sophiaray. I've pinned two projects that I'm quite happy with. Cause-affect-static is a static webapp framework that I built from scratch when I had to teach several psychology professionals to build web apps. I found that they got themselves up and running much quicker using this approach than when they were asked to learn a full-fledge web framework.
+
+The other pinned project is my progress on project Euler progress. It's a set of a few toy problems but I'm really proud of the way I've solved a few of them. And I've found myself re-using parts of solutions in my other work all the time.
+
+Last, I have a gist of a re-implementation of one of my favorite models of representation: https://gist.github.com/sophiaray/2891bf2d36405cdbdf94c16e5ffbf024 . It's a MCMC sampler of a probabilistic context free grammar.
+
+## 6. What's your favorite open source project?
+
+My absolute favorite open source project is scikit-learn. It's fast-moving, focused on practical usability, and something I find myself using all the time.
